@@ -385,6 +385,28 @@ func packDir(srcDir, archivePath string) error {
 }
 
 // unpack extracts a tar archive into destDir, guarding against path traversal.
+func resolvedWithin(baseAbs, candidate string) (string, bool, error) {
+	candidateAbs, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", false, err
+	}
+
+	parentResolved, err := filepath.EvalSymlinks(filepath.Dir(candidateAbs))
+	if err != nil {
+		return "", false, err
+	}
+
+	resolved := filepath.Join(parentResolved, filepath.Base(candidateAbs))
+	rel, err := filepath.Rel(baseAbs, resolved)
+	if err != nil {
+		return "", false, err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return resolved, false, nil
+	}
+	return resolved, true, nil
+}
+
 func unpack(archivePath, destDir string) error {
 	if err := os.RemoveAll(destDir); err != nil {
 		return err
@@ -443,6 +465,11 @@ func unpack(archivePath, destDir string) error {
 				return err
 			}
 		case tar.TypeReg:
+			if _, ok, err := resolvedWithin(destAbs, target); err != nil {
+				return err
+			} else if !ok {
+				continue
+			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
@@ -456,20 +483,18 @@ func unpack(archivePath, destDir string) error {
 				return copyErr
 			}
 		case tar.TypeSymlink:
+			if _, ok, err := resolvedWithin(destAbs, target); err != nil {
+				return err
+			} else if !ok {
+				continue
+			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
-			linkTarget := filepath.Clean(hdr.Linkname)
-			linkAbs := filepath.Join(filepath.Dir(targetAbs), linkTarget)
-			linkAbs, err = filepath.Abs(linkAbs)
-			if err != nil {
+			linkCandidate := filepath.Join(filepath.Dir(target), hdr.Linkname)
+			if _, ok, err := resolvedWithin(destAbs, linkCandidate); err != nil {
 				return err
-			}
-			linkRel, err := filepath.Rel(destAbs, linkAbs)
-			if err != nil {
-				return err
-			}
-			if linkRel == ".." || strings.HasPrefix(linkRel, ".."+string(os.PathSeparator)) {
+			} else if !ok {
 				continue
 			}
 			if err := os.Symlink(hdr.Linkname, target); err != nil {
