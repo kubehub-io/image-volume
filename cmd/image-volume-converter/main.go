@@ -268,8 +268,12 @@ func loadImage(ctx context.Context, ref name.Reference, platform v1.Platform, au
 	return img, "remote registry", nil
 }
 
-// exportOCILayout writes the image into an OCI layout directory, packs it into
-// an OCI archive and then unpacks the archive into the final directory.
+// exportOCILayout writes the image into an OCI layout directory and also packs
+// that layout into an OCI archive. The layout is used directly for processing;
+// there is no reason to round-trip it through tar first. In particular, doing
+// so can lose a blob referenced by the layout when the source image contains
+// descriptors that are not represented as ordinary files by the archive
+// implementation.
 func exportOCILayout(workDir, archivePath, ociDir string, img v1.Image) error {
 	if err := os.RemoveAll(workDir); err != nil {
 		return err
@@ -278,17 +282,13 @@ func exportOCILayout(workDir, archivePath, ociDir string, img v1.Image) error {
 		return err
 	}
 
-	staging := filepath.Join(workDir, "staging")
-	if err := writeLayout(staging, img); err != nil {
+	if err := writeLayout(ociDir, img); err != nil {
 		return err
 	}
-	if err := packDir(staging, archivePath); err != nil {
+	if err := packDir(ociDir, archivePath); err != nil {
 		return err
 	}
-	if err := unpack(archivePath, ociDir); err != nil {
-		return err
-	}
-	fmt.Printf("image-volume-converter: exported OCI archive to %s and unpacked it to %s\n", archivePath, ociDir)
+	fmt.Printf("image-volume-converter: exported OCI archive to %s (layout at %s)\n", archivePath, ociDir)
 	return nil
 }
 
