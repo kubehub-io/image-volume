@@ -39,6 +39,10 @@ inputs:
       to secrets.GITHUB_TOKEN.
     required: false
     default: ''
+  debug:
+    description: 'Print image manifest and OCI layout diagnostics.'
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -83,6 +87,7 @@ runs:
         INPUT_PUBLISH_TO: ${{ inputs.publishTo }}
         INPUT_REGISTRY_USERNAME: ${{ inputs.registryUsername }}
         INPUT_REGISTRY_PASSWORD: ${{ inputs.registryPassword }}
+        INPUT_DEBUG: ${{ inputs.debug }}
         INPUT_GITHUB_ACTOR: ${{ github.actor }}
         INPUT_GITHUB_TOKEN: ${{ github.token }}
       run: "$RUNNER_TEMP/image-volume-converter/image-volume-converter"
