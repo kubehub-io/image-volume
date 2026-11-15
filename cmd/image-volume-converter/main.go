@@ -94,11 +94,26 @@ func run() error {
 	if debug {
 		debugImage("source", img)
 	}
+	// daemon.Image combines Docker's inspected config identity with the raw
+	// manifest from `docker save`. Those can disagree (ConfigName may differ
+	// from the manifest's config descriptor), which would make layout.Write
+	// write a config blob under the wrong digest. Rebuild the image manifest
+	// from the config object so its descriptor and blob are consistent.
+	sourceConfig, err := img.ConfigFile()
+	if err != nil {
+		return fmt.Errorf("reading source config: %w", err)
+	}
+	img, err = mutate.ConfigFile(img, sourceConfig)
+	if err != nil {
+		return fmt.Errorf("canonicalizing source config: %w", err)
+	}
+	if debug {
+		debugImage("canonical source", img)
+	}
 
-	// 1b) Export the image as an OCI archive and unpack it into an OCI layout
-	//     directory. This mirrors:
-	//       podman save --format oci-archive -o /tmp/docs.tar <image>
-	//       tar -xf /tmp/docs.tar -C /tmp/docs-oci
+	// 1b) Write the image directly to an OCI layout and pack a copy as an
+	//     archive. The layout is used for the conversion; it is not unpacked
+	//     from the archive again.
 	workDir := filepath.Join(os.TempDir(), "image-volume-converter")
 	archivePath := filepath.Join(workDir, "docs.tar")
 	ociDir := filepath.Join(workDir, "docs-oci")
