@@ -10,6 +10,7 @@ package main
 import (
 	"archive/tar"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -48,6 +49,7 @@ func run() error {
 	password := os.Getenv("INPUT_REGISTRY_PASSWORD")
 	actor := os.Getenv("INPUT_GITHUB_ACTOR")
 	token := os.Getenv("INPUT_GITHUB_TOKEN")
+	debug := strings.EqualFold(strings.TrimSpace(os.Getenv("INPUT_DEBUG")), "true")
 
 	if imageTag == "" {
 		return errors.New("INPUT_IMAGE_TAG is required")
@@ -89,6 +91,9 @@ func run() error {
 		return err
 	}
 	fmt.Printf("image-volume-converter: resolved %s from %s\n", srcRef, source)
+	if debug {
+		debugImage("source", img)
+	}
 
 	// 1b) Export the image as an OCI archive and unpack it into an OCI layout
 	//     directory. This mirrors:
@@ -99,6 +104,9 @@ func run() error {
 	ociDir := filepath.Join(workDir, "docs-oci")
 	if err := exportOCILayout(workDir, archivePath, ociDir, img); err != nil {
 		return err
+	}
+	if debug {
+		debugLayout(ociDir)
 	}
 
 	// 2) Resolve index.json -> manifest -> config, reading the blobs exactly as
@@ -302,6 +310,61 @@ func writeLayout(dir string, img v1.Image) error {
 		return err
 	}
 	return path.AppendImage(img)
+}
+
+// debugImage prints the descriptors that the source image exposes to the OCI
+// writer. This is useful for diagnosing images whose manifest and layer
+// accessors disagree.
+func debugImage(label string, img v1.Image) {
+	configName, configErr := img.ConfigName()
+	if configErr != nil {
+		fmt.Printf("image-volume-converter: debug %s ConfigName: ERROR %v\n", label, configErr)
+	} else {
+		fmt.Printf("image-volume-converter: debug %s ConfigName=%s\n", label, configName)
+	}
+	layers, layersErr := img.Layers()
+	if layersErr != nil {
+		fmt.Printf("image-volume-converter: debug %s Layers: ERROR %v\n", label, layersErr)
+	} else {
+		for i, layer := range layers {
+			digest, digestErr := layer.Digest()
+			size, sizeErr := layer.Size()
+			fmt.Printf("image-volume-converter: debug %s accessor layer[%d]=%s size=%d digestErr=%v sizeErr=%v\n", label, i, digest, size, digestErr, sizeErr)
+		}
+	}
+	raw, err := img.RawManifest()
+	if err != nil {
+		fmt.Printf("image-volume-converter: debug %s manifest: ERROR %v\n", label, err)
+		return
+	}
+	var manifest v1.Manifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		fmt.Printf("image-volume-converter: debug %s manifest: invalid JSON: %v\n", label, err)
+		return
+	}
+	fmt.Printf("image-volume-converter: debug %s config=%s size=%d layers=%d\n", label, manifest.Config.Digest, manifest.Config.Size, len(manifest.Layers))
+	for i, layer := range manifest.Layers {
+		fmt.Printf("image-volume-converter: debug %s layer[%d]=%s size=%d mediaType=%s\n", label, i, layer.Digest, layer.Size, layer.MediaType)
+	}
+}
+
+func debugLayout(dir string) {
+	count := 0
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Printf("image-volume-converter: debug layout %s: ERROR %v\n", path, err)
+			return nil
+		}
+		if !info.IsDir() {
+			count++
+			fmt.Printf("image-volume-converter: debug layout file=%s size=%d mode=%s\n", path, info.Size(), info.Mode())
+		}
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("image-volume-converter: debug layout walk: ERROR %v\n", err)
+	}
+	fmt.Printf("image-volume-converter: debug layout files=%d\n", count)
 }
 
 // imageFromLayout resolves the single image described by an OCI layout

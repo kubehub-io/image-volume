@@ -84,6 +84,7 @@ jobs:
         env:
           INPUT_IMAGE_TAG: ghcr.io/${{ github.repository }}-test:${{ env.IMAGE_TAG }}
           INPUT_PUBLISH_TO: OCIArchive:${{ runner.temp }}/no-arch.tar
+          INPUT_DEBUG: 'true'
           INPUT_GITHUB_ACTOR: ${{ github.actor }}
           INPUT_GITHUB_TOKEN: ${{ github.token }}
         run: "$RUNNER_TEMP/image-volume-converter"
@@ -94,6 +95,7 @@ jobs:
         with:
           imageTag: ghcr.io/${{ github.repository }}-test:${{ env.IMAGE_TAG }}
           publishTo: OCIArchive:${{ runner.temp }}/no-arch.tar
+          debug: true
 
       - name: Ensure skopeo is installed
         if: github.event_name != 'release'
@@ -116,3 +118,4 @@ jobs:
           imageTag: ghcr.io/${{ github.repository }}-test:${{ env.IMAGE_TAG }}
           outputImageTag: ghcr.io/${{ github.repository }}-test:no-arch
           publishTo: RemotePush
+          debug: true
